@@ -80,13 +80,19 @@
 
   // Basis API: `/api/*` (server lokal / redirect Netlify). Kalau itu tidak tersedia,
   // jatuh ke Netlify Function berbasis file (`/catalog`, `/meta`, `/search`, `/health`).
-  let apiBase = null; // null = belum diketahui, 'api' | 'root'
+  let apiBase = null; // null = belum diketahui, 'api' | 'fn' | 'root'
 
   async function fetchWithFallback(path, qs) {
-    const bases = apiBase ? [apiBase] : ['api', 'root'];
+    const bases = apiBase ? [apiBase] : ['api', 'fn', 'root'];
     let lastErr = null;
     for (const base of bases) {
-      const url = base === 'api' ? `/api/${path}${qs}` : `/${path}${qs}`;
+      // 'api' = proxy /api/*, 'fn' = /.netlify/functions/<nama>, 'root' = /<nama>
+      const url =
+        base === 'api'
+          ? `/api/${path}${qs}`
+          : base === 'fn'
+            ? `/.netlify/functions/${path}${qs}`
+            : `/${path}${qs}`;
       try {
         const res = await fetch(url, { headers: { Accept: 'application/json' } });
         const ctype = res.headers.get('content-type') || '';
