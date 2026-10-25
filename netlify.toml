@@ -9,9 +9,21 @@
   status = 200
   force = true
 
-# Semua rute lain -> SPA
+# Halaman lama/tidak ada -> index.html (SPA).
+# Sengaja memakai regex eksplisit: pola "/*" menangkap semua path sehingga
+# function berbasis file (/health, /catalog, ...) ikut tertelan.
 [[redirects]]
-  from = "/*"
+  from = "/*.html"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/index.html"
   to = "/index.html"
   status = 200
 
