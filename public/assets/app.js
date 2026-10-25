@@ -24,12 +24,42 @@
     return list;
   })();
 
+  // Penyedia pemutaran. Semua memakai iframe, dan sebagian memasang iklan/popup
+  // lewat window.open. Karena itu iframe diberi sandbox tanpa allow-popups.
   const STREAM_PROVIDERS = [
-    { id: 'vidsrc', name: 'VidSrc', movie: (id) => `https://vidsrc.to/embed/movie/${id}`, tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}` },
-    { id: 'vidsrc2', name: 'VidSrc (2)', movie: (id) => `https://vidsrc.xyz/embed/movie/${id}`, tv: (id, s, e) => `https://vidsrc.xyz/embed/tv/${id}/${s}/${e}` },
-    { id: '2embed', name: '2Embed', movie: (id) => `https://www.2embed.cc/embed/${id}`, tv: (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}` },
-    { id: 'youtube', name: 'Trailer (YouTube)', movie: null, tv: null },
+    {
+      id: 'vidlink',
+      name: 'VidLink',
+      sandbox: true,
+      movie: (id) => `https://vidlink.pro/movie/${id}`,
+      tv: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
+    },
+    {
+      id: 'vsembed',
+      name: 'VSEmbed',
+      sandbox: true,
+      movie: (id) => `https://vsembed.ru/embed/movie/${id}/`,
+      tv: (id, s, e) => `https://vsembed.ru/embed/tv/${id}/${s}/${e}/`,
+    },
+    {
+      id: '2embed',
+      name: '2Embed',
+      sandbox: true,
+      movie: (id) => `https://www.2embed.cc/embed/${id}`,
+      tv: (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`,
+    },
+    {
+      id: 'vidsrc',
+      name: 'VidSrc',
+      sandbox: false, // pemutar ini menolak berjalan di dalam iframe sandbox
+      movie: (id) => `https://vidsrc.to/embed/movie/${id}`,
+      tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
+    },
   ];
+
+  // Sandbox ketat: tanpa allow-popups -> window.open / target=_blank diblokir browser,
+  // jadi iklan tidak bisa membuka tab baru.
+  const SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-orientation-lock';
 
   /* ------------------------------ util ------------------------------ */
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -689,7 +719,29 @@
   }
 
   /* ------------------------------ player ------------------------------ */
-  const playerState = { meta: null, episode: null, provider: 'vidsrc' };
+  const playerState = { meta: null, episode: null, provider: store.get('provider', 'vidlink') };
+
+  /* Anti pop-up iklan: kalau ada script di halaman ini yang mencoba window.open,
+     jangan buka tab baru. Hanya berlaku selama pemutar terbuka. */
+  let popupGuard = null;
+  let popupBlocked = 0;
+
+  function guardPopups() {
+    if (popupGuard) return;
+    popupGuard = window.open;
+    window.open = function () {
+      popupBlocked += 1;
+      return null;
+    };
+  }
+
+  function releasePopups() {
+    if (popupGuard) {
+      window.open = popupGuard;
+      popupGuard = null;
+    }
+    popupBlocked = 0;
+  }
 
   function openPlayer(meta, episode, trailerId) {
     playerState.meta = meta;
@@ -707,6 +759,7 @@
 
     $('#playerOverlay').hidden = false;
     document.body.style.overflow = 'hidden';
+    guardPopups();
     renderPlayer();
   }
 
@@ -726,33 +779,49 @@
       return;
     }
 
-    const providers = STREAM_PROVIDERS.filter((p) => p.movie || p.id !== 'youtube');
+    const providers = STREAM_PROVIDERS;
     const current = providers.find((p) => p.id === playerState.provider) || providers[0];
     const url =
       meta.type === 'series' && episode
         ? current.tv(meta.id, episode.season, episode.episode)
         : current.movie(meta.id);
 
-    frame.innerHTML = `<iframe src="${esc(url)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="origin" title="${esc(meta.name)}"></iframe>`;
+    const sandboxAttr = current.sandbox ? ` sandbox="${SANDBOX}"` : '';
+    frame.innerHTML = `<iframe src="${esc(url)}"${sandboxAttr} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="origin" title="${esc(meta.name)}"></iframe>`;
 
     foot.innerHTML = `
       <span>Sumber:</span>
       ${providers
         .map(
           (p) =>
-            `<button class="chip ${p.id === current.id ? 'active' : ''}" data-provider="${p.id}">${esc(p.name)}</button>`
+            `<button class="chip ${p.id === current.id ? 'active' : ''}" data-provider="${p.id}" title="${
+              p.sandbox ? 'Iklan popup diblokir' : 'Tanpa sandbox (bisa memunculkan popup iklan)'
+            }">${esc(p.name)}</button>`
         )
         .join('')}
       <span class="grow"></span>
+      <button class="btn tiny ghost" id="btnOpenTab" title="Buka di tab baru bila pemutar menolak tampil di sini">Buka Tab Baru</button>
       ${meta.trailer ? `<button class="btn tiny ghost" id="btnTrailerInPlayer">Trailer</button>` : ''}
       ${meta.imdb ? `<a class="btn tiny ghost" href="${esc(meta.imdb)}" target="_blank" rel="noopener">IMDb</a>` : ''}`;
 
     foot.querySelectorAll('[data-provider]').forEach((b) => {
       b.onclick = () => {
         playerState.provider = b.dataset.provider;
+        store.set('provider', b.dataset.provider);
         renderPlayer();
       };
     });
+
+    const openTab = $('#btnOpenTab');
+    if (openTab)
+      openTab.onclick = () => {
+        // buka lewat guard supaya tab baru hanya dibuat oleh aksi klik user ini
+        const fn = popupGuard || window.open;
+        const w = fn.call(window, url, '_blank', 'noopener,noreferrer');
+        if (w) w.opener = null;
+        toast('Pemutar dibuka di tab baru — pakai adblocker agar bebas iklan');
+      };
+
     const tb = $('#btnTrailerInPlayer');
     if (tb) tb.onclick = () => openPlayer(meta, episode, meta.trailer);
   }
@@ -761,6 +830,7 @@
     $('#playerOverlay').hidden = true;
     $('#playerFrame').innerHTML = '';
     document.body.style.overflow = '';
+    releasePopups();
   }
 
   /* ------------------------------ halaman: watchlist & riwayat ------------------------------ */
