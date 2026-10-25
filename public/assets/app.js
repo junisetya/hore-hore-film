@@ -121,6 +121,10 @@
   // jatuh ke Netlify Function berbasis file (`/catalog`, `/meta`, `/search`, `/health`).
   let apiBase = null; // null = belum diketahui, 'api' | 'fn' | 'root'
 
+  // Kalau server membalas JSON dengan field `error`, itu error dari API (bukan
+  // endpoint hilang) -> jangan coba basis lain, tampilkan pesannya langsung.
+  class ApiError extends Error {}
+
   async function fetchWithFallback(path, qs) {
     const bases = apiBase ? [apiBase] : ['api', 'fn', 'root'];
     let lastErr = null;
@@ -143,11 +147,13 @@
             const j = await res.json();
             if (j && j.error) msg = j.error;
           } catch (e) {}
-          throw new Error(msg);
+          apiBase = base; // basis ini benar, hanya permintaannya yang gagal
+          throw new ApiError(msg);
         }
         apiBase = base;
         return await res.json();
       } catch (err) {
+        if (err instanceof ApiError) throw err;
         lastErr = err;
       }
     }
