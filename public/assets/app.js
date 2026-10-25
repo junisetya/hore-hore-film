@@ -117,47 +117,62 @@
     };
   }
 
-  // Basis API: `/api/*` (server lokal / redirect Netlify). Kalau itu tidak tersedia,
-  // jatuh ke Netlify Function berbasis file (`/catalog`, `/meta`, `/search`, `/health`).
-  let apiBase = null; // null = belum diketahui, 'api' | 'fn' | 'root'
+  // Basis API: `/api/*` (server lokal / redirect Netlify). Di Netlify redirect itu
+  // tidak selalu aktif, jadi setiap endpoint dicoba berurutan dan hasilnya diingat
+  // per-endpoint:
+  //   'api'  -> /api/<nama>
+  //   'fn'   -> /.netlify/functions/<nama>
+  //   'root' -> /<nama>
+  const apiBases = {}; // { [endpoint]: 'api' | 'fn' | 'root' }
 
-  // Kalau server membalas JSON dengan field `error`, itu error dari API (bukan
-  // endpoint hilang) -> jangan coba basis lain, tampilkan pesannya langsung.
+  // Server membalas JSON dengan field `error` = error asli dari API (bukan endpoint
+  // hilang) -> pesannya diteruskan, tidak perlu coba basis lain.
   class ApiError extends Error {}
 
+  const buildUrl = (base, path, qs) =>
+    base === 'api' ? `/api/${path}${qs}` : base === 'fn' ? `/.netlify/functions/${path}${qs}` : `/${path}${qs}`;
+
   async function fetchWithFallback(path, qs) {
-    const bases = apiBase ? [apiBase] : ['api', 'fn', 'root'];
+    const known = apiBases[path];
+    const bases = known ? [known, ...['api', 'fn', 'root'].filter((b) => b !== known)] : ['api', 'fn', 'root'];
     let lastErr = null;
+
     for (const base of bases) {
-      // 'api' = proxy /api/*, 'fn' = /.netlify/functions/<nama>, 'root' = /<nama>
-      const url =
-        base === 'api'
-          ? `/api/${path}${qs}`
-          : base === 'fn'
-            ? `/.netlify/functions/${path}${qs}`
-            : `/${path}${qs}`;
+      const url = buildUrl(base, path, qs);
       try {
         const res = await fetch(url, { headers: { Accept: 'application/json' } });
         const ctype = res.headers.get('content-type') || '';
-        // Redirect SPA mengembalikan HTML (bukan JSON) -> anggap endpoint tidak ada
         if (!ctype.includes('json')) throw new Error('endpoint tidak tersedia (' + res.status + ')');
-        if (!res.ok) {
-          let msg = 'Gagal memuat data (' + res.status + ')';
-          try {
-            const j = await res.json();
-            if (j && j.error) msg = j.error;
-          } catch (e) {}
-          apiBase = base; // basis ini benar, hanya permintaannya yang gagal
+
+        let body = null;
+        try {
+          body = await res.json();
+        } catch (e) {
+          throw new Error('respons bukan JSON');
+        }
+
+        if (body && body.error) {
+          // Endpoint ini benar-benar ada (server menjawab JSON error).
+          // Kecuali pesannya "endpoint tidak ditemukan" -> function ini tidak
+          // mengenal path tersebut, coba basis lain.
+          const msg = String(body.error);
+          if (/tidak ditemukan|not found|notfound/i.test(msg)) {
+            lastErr = new Error(msg);
+            continue;
+          }
+          apiBases[path] = base;
           throw new ApiError(msg);
         }
-        apiBase = base;
-        return await res.json();
+
+        if (!res.ok) throw new Error('Gagal memuat data (' + res.status + ')');
+
+        apiBases[path] = base;
+        return body;
       } catch (err) {
         if (err instanceof ApiError) throw err;
         lastErr = err;
       }
     }
-    apiBase = null;
     throw lastErr || new Error('Gagal memuat data');
   }
 
