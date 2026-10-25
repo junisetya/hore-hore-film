@@ -26,21 +26,9 @@
 
   // Penyedia pemutaran. Semua memakai iframe, dan sebagian memasang iklan/popup
   // lewat window.open. Karena itu iframe diberi sandbox tanpa allow-popups.
+  // `hidden: true` = masih tersedia sebagai cadangan otomatis, tapi tidak ditampilkan
+  // sebagai pilihan di bar sumber.
   const STREAM_PROVIDERS = [
-    {
-      id: 'vidlink',
-      name: 'VidLink',
-      sandbox: true,
-      movie: (id) => `https://vidlink.pro/movie/${id}`,
-      tv: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
-    },
-    {
-      id: 'vsembed',
-      name: 'VSEmbed',
-      sandbox: true,
-      movie: (id) => `https://vsembed.ru/embed/movie/${id}/`,
-      tv: (id, s, e) => `https://vsembed.ru/embed/tv/${id}/${s}/${e}/`,
-    },
     {
       id: '2embed',
       name: '2Embed',
@@ -49,13 +37,34 @@
       tv: (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`,
     },
     {
+      id: 'vidlink',
+      name: 'VidLink',
+      sandbox: true,
+      hidden: true,
+      movie: (id) => `https://vidlink.pro/movie/${id}`,
+      tv: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
+    },
+    {
+      id: 'vsembed',
+      name: 'VSEmbed',
+      sandbox: true,
+      hidden: true,
+      movie: (id) => `https://vsembed.ru/embed/movie/${id}/`,
+      tv: (id, s, e) => `https://vsembed.ru/embed/tv/${id}/${s}/${e}/`,
+    },
+    {
       id: 'vidsrc',
       name: 'VidSrc',
       sandbox: false, // pemutar ini menolak berjalan di dalam iframe sandbox
+      hidden: true,
       movie: (id) => `https://vidsrc.to/embed/movie/${id}`,
       tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
     },
   ];
+
+  // Sumber yang ditampilkan ke pengguna (sekarang hanya 2Embed).
+  const VISIBLE_PROVIDERS = STREAM_PROVIDERS.filter((p) => !p.hidden);
+  const DEFAULT_PROVIDER = VISIBLE_PROVIDERS[0].id;
 
   // Sandbox ketat: tanpa allow-popups -> window.open / target=_blank diblokir browser,
   // jadi iklan tidak bisa membuka tab baru.
@@ -719,7 +728,7 @@
   }
 
   /* ------------------------------ player ------------------------------ */
-  const playerState = { meta: null, episode: null, provider: store.get('provider', 'vidlink') };
+  const playerState = { meta: null, episode: null, provider: store.get('provider', DEFAULT_PROVIDER) };
 
   /* Anti pop-up iklan: kalau ada script di halaman ini yang mencoba window.open,
      jangan buka tab baru. Hanya berlaku selama pemutar terbuka. */
@@ -779,7 +788,7 @@
       return;
     }
 
-    const providers = STREAM_PROVIDERS;
+    const providers = VISIBLE_PROVIDERS;
     const current = providers.find((p) => p.id === playerState.provider) || providers[0];
     const url =
       meta.type === 'series' && episode
@@ -790,7 +799,7 @@
     frame.innerHTML = `<iframe src="${esc(url)}"${sandboxAttr} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="origin" title="${esc(meta.name)}"></iframe>`;
 
     foot.innerHTML = `
-      <span>Sumber:</span>
+      ${providers.length > 1 ? '<span>Sumber:</span>' : ''}
       ${providers
         .map(
           (p) =>
