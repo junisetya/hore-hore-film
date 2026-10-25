@@ -350,6 +350,7 @@
     document.title = 'Hore-Hore Film — Nonton Film & Series';
     view.innerHTML = `
       <div id="heroWrap"></div>
+      <section class="section" id="secIndonesia">${sectionHead('Film Indonesia 🇮🇩', null, '#/indonesia')}${skeletonGrid(12)}</section>
       <section class="section" id="secPopuler">${sectionHead('Film Populer', null, '#/films')}${skeletonGrid(12)}</section>
       <section class="section" id="secTerbaru">${sectionHead('Baru Ditambahkan', null, '#/films?catalog=year')}${skeletonGrid(12)}</section>
       <section class="section" id="secSeries">${sectionHead('Series Pilihan', null, '#/series')}${skeletonGrid(12)}</section>
@@ -386,6 +387,9 @@
     load('secTop', { type: 'movie', catalog: 'imdbRating', skip: 0 }, '#/films?catalog=imdbRating', 'Lihat Semua', 'Rating Tertinggi');
     load('secHorror', { type: 'movie', catalog: 'top', genre: 'Horror', skip: 0 }, '#/genre/Horror', 'Lihat Semua', 'Lagi Horor?');
 
+    // Baris khusus Indonesia (paling atas setelah hero)
+    loadIndonesia($('#secIndonesia'));
+
     // lanjut menonton
     const hist = History.all().slice(0, 12);
     if (hist.length) {
@@ -399,6 +403,112 @@
   }
 
   /* ------------------------------ halaman: browse ------------------------------ */
+  /* ------------------------------ film indonesia ------------------------------ */
+  let indonesiaCache = null;
+
+  async function getIndonesia() {
+    if (indonesiaCache) return indonesiaCache;
+    const cached = store.get('indonesia', null);
+    if (cached && Array.isArray(cached.items) && Date.now() - cached.at < 1000 * 60 * 60 * 24) {
+      indonesiaCache = cached.items;
+      return indonesiaCache;
+    }
+    try {
+      const data = await api('indonesia', null);
+      const items = (data.items || []).map((m) => ({ ...m, type: 'movie' }));
+      indonesiaCache = items;
+      store.set('indonesia', { at: Date.now(), items });
+      return items;
+    } catch (err) {
+      if (cached && cached.items) return cached.items;
+      throw err;
+    }
+  }
+
+  // Urutkan: yang populer & berating lebih dulu, sisanya acak ringan supaya tidak monoton
+  function indonesiaPicks(items, n) {
+    const score = (m) => (m.popularity || 0) * 2 + (m.rating || 0) + (parseInt(m.year, 10) >= 2015 ? 2 : 0);
+    const top = items.filter((m) => m.rating >= 6 || score(m) > 6).sort((a, b) => score(b) - score(a));
+    const rest = items.filter((m) => !top.includes(m)).sort(() => Math.random() - 0.5);
+    return top.slice(0, n - 4).concat(rest.slice(0, 4));
+  }
+
+  async function loadIndonesia(box) {
+    if (!box) return;
+    try {
+      const items = await getIndonesia();
+      if (!items.length) {
+        box.innerHTML = sectionHead('Film Indonesia 🇮🇩');
+        box.hidden = true;
+        return;
+      }
+      const picks = indonesiaPicks(items, 14);
+      box.innerHTML =
+        sectionHead('Film Indonesia 🇮🇩', items.length, '#/indonesia', 'Lihat Semua') +
+        `<div class="hrow">${picks.map((m) => cardHTML(m)).join('')}</div>`;
+    } catch (err) {
+      box.innerHTML = sectionHead('Film Indonesia 🇮🇩') + errorHTML(err.message);
+    }
+  }
+
+  async function pageIndonesia(view) {
+    document.title = 'Film Indonesia — Hore-Hore Film';
+    view.innerHTML = `
+      <div class="breadcrumb"><a href="#/">Home</a><span>/</span><span>Film Indonesia</span></div>
+      ${sectionHead('Film Indonesia 🇮🇩')}
+      <div class="filterbar">
+        <div class="segmented" id="idSort">
+          <button class="active" data-sort="populer">Populer</button>
+          <button data-sort="rating">Rating</button>
+          <button data-sort="baru">Terbaru</button>
+        </div>
+        <select class="select" id="idGenre" aria-label="Genre"><option value="">Semua Genre</option></select>
+      </div>
+      <div id="idResults">${skeletonGrid(18)}</div>`;
+
+    let items;
+    try {
+      items = await getIndonesia();
+    } catch (err) {
+      $('#idResults').innerHTML = errorHTML(err.message);
+      return;
+    }
+
+    const genreSet = [...new Set(items.flatMap((m) => m.genres || []))].sort();
+    $('#idGenre').innerHTML =
+      '<option value="">Semua Genre</option>' +
+      genreSet.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+
+    let sort = 'populer';
+    let genre = '';
+
+    const paint = () => {
+      let list = items.slice();
+      if (genre) list = list.filter((m) => (m.genres || []).includes(genre));
+      if (sort === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      else if (sort === 'baru') list.sort((a, b) => parseInt(b.year || 0, 10) - parseInt(a.year || 0, 10));
+      else list.sort((a, b) => (b.popularity || 0) - (a.popularity || 0) || (b.rating || 0) - (a.rating || 0));
+
+      $('#idResults').innerHTML = list.length
+        ? `<div class="grid">${list.map((m) => cardHTML(m)).join('')}</div>`
+        : emptyHTML('Belum ada judul', 'Coba pilih genre lain.', '#/indonesia', 'Reset');
+    };
+
+    $('#idSort').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-sort]');
+      if (!b) return;
+      sort = b.dataset.sort;
+      $$('#idSort button').forEach((x) => x.classList.toggle('active', x === b));
+      paint();
+    });
+    $('#idGenre').addEventListener('change', (e) => {
+      genre = e.target.value;
+      paint();
+    });
+
+    paint();
+  }
+
   async function pageBrowse(view, { type, catalog = 'top', genre = '', year = '' }) {
     const isSeries = type === 'series';
     const label = isSeries ? 'Series' : 'Film';
@@ -944,6 +1054,9 @@
     } else if (seg === 'series' && parts[1]) {
       setActiveNav('series');
       await pageDetail(view, 'series', parts[1]);
+    } else if (seg === 'indonesia') {
+      setActiveNav('indonesia');
+      await pageIndonesia(view);
     } else if (seg === 'genre' && parts[1]) {
       setActiveNav('genre');
       await pageBrowse(view, { type: q.get('type') === 'series' ? 'series' : 'movie', genre: parts[1], catalog: 'top' });
