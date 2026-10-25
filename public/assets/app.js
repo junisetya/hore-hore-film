@@ -140,7 +140,18 @@
     for (const base of bases) {
       const url = buildUrl(base, path, qs);
       try {
-        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 9000);
+        let res;
+        try {
+          res = await fetch(url, {
+            headers: { Accept: 'application/json' },
+            mode: 'cors', // jangan diam-diam jatuh ke mode 'no-cors' (respons buram)
+            signal: ctrl.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
         const ctype = res.headers.get('content-type') || '';
         if (!ctype.includes('json')) throw new Error('endpoint tidak tersedia (' + res.status + ')');
 
@@ -179,6 +190,24 @@
   async function api(path, params) {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return fetchWithFallback(path, qs);
+  }
+
+  // Ambil data dengan batas waktu; kalau lewat, anggap gagal (dipakai agar
+  // baris homepage tidak menggantung saat function lambat/tidak ada).
+  function withTimeout(promise, ms, label) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(label || 'Waktu habis')), ms);
+      promise.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        }
+      );
+    });
   }
 
   /* ------------------------------ watchlist & riwayat ------------------------------ */
@@ -435,12 +464,28 @@
       return indonesiaCache;
     }
     try {
-      const data = await api('indonesia', null);
+      const data = await withTimeout(api('indonesia', null), 9000, 'Data film Indonesia lambat dimuat');
       const items = (data.items || []).map((m) => ({ ...m, type: 'movie' }));
+      if (!items.length) throw new Error('Daftar film Indonesia kosong');
       indonesiaCache = items;
       store.set('indonesia', { at: Date.now(), items });
       return items;
     } catch (err) {
+      // cadangan: berkas statis yang ikut ter-deploy (tidak butuh function)
+      try {
+        const res = await fetch('/data/indonesia.json', { cache: 'no-cache' });
+        if (res.ok) {
+          const data = await res.json();
+          const items = (data.items || []).map((m) => ({ ...m, type: 'movie' }));
+          if (items.length) {
+            indonesiaCache = items;
+            store.set('indonesia', { at: Date.now(), items });
+            return items;
+          }
+        }
+      } catch (e) {
+        /* lanjut ke cache */
+      }
       if (cached && cached.items) return cached.items;
       throw err;
     }
