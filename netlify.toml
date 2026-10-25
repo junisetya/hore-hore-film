@@ -2,9 +2,6 @@
   publish = "public"
   functions = "netlify/functions"
 
-[functions]
-  node_bundler = "esbuild"
-
 # Proxy katalog -> Netlify Function (pengganti server.js saat lokal)
 [[redirects]]
   from = "/api/*"
