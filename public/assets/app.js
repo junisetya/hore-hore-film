@@ -70,6 +70,11 @@
   // jadi iklan tidak bisa membuka tab baru.
   const SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-orientation-lock';
 
+  // Subtitle lokal (SRT/VTT yang diunggah pemilik situs) disimpan di /subs/<imdb>.id.vtt
+  const SUB_LANG = 'id';
+  const subUrlFor = (id) => `/subs/${id}.${SUB_LANG}.vtt`;
+  const subState = { enabled: false, offset: 0, cues: [], timer: null };
+
   /* ------------------------------ util ------------------------------ */
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -972,7 +977,11 @@
         : current.movie(meta.id);
 
     const sandboxAttr = current.sandbox ? ` sandbox="${SANDBOX}"` : '';
-    frame.innerHTML = `<iframe src="${esc(url)}"${sandboxAttr} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="origin" title="${esc(meta.name)}"></iframe>`;
+    // sandbox dengan allow-same-origin + allow-scripts membuat iframe bisa diakses
+    // dari halaman ini (untuk menyisipkan <track> subtitle) selama originnya sama.
+    frame.innerHTML = `<iframe id="streamFrame" src="${esc(url)}"${sandboxAttr} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="origin" title="${esc(meta.name)}"></iframe>
+      <div class="sub-overlay" id="subOverlay" hidden></div>
+      <div class="sub-status" id="subStatus" hidden></div>`;
 
     foot.innerHTML = `
       ${providers.length > 1 ? '<span>Sumber:</span>' : ''}
@@ -985,6 +994,10 @@
         )
         .join('')}
       <span class="grow"></span>
+      <button class="btn tiny ghost sub-btn" id="btnSub" title="Subtitle Indonesia (file milik situs)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm2 8v2h5v-2H5Zm7 0v2h8v-2h-8ZM5 10v2h8v-2H5Zm10 0v2h5v-2h-5Z"/></svg>
+        Subtitle
+      </button>
       <button class="btn tiny ghost" id="btnOpenTab" title="Buka di tab baru bila pemutar menolak tampil di sini">Buka Tab Baru</button>
       ${meta.trailer ? `<button class="btn tiny ghost" id="btnTrailerInPlayer">Trailer</button>` : ''}
       ${meta.imdb ? `<a class="btn tiny ghost" href="${esc(meta.imdb)}" target="_blank" rel="noopener">IMDb</a>` : ''}`;
@@ -1009,9 +1022,158 @@
 
     const tb = $('#btnTrailerInPlayer');
     if (tb) tb.onclick = () => openPlayer(meta, episode, meta.trailer);
+
+    initSubtitle(meta);
+  }
+
+  /* ------------------------------ subtitle lokal ------------------------------ */
+  function stopSubtitle() {
+    if (subState.timer) {
+      clearInterval(subState.timer);
+      subState.timer = null;
+    }
+    subState.cues = [];
+    const overlay = $('#subOverlay');
+    if (overlay) {
+      overlay.hidden = true;
+      overlay.innerHTML = '';
+    }
+    const status = $('#subStatus');
+    if (status) status.hidden = true;
+  }
+
+  function setSubStatus(msg, isError) {
+    const el = $('#subStatus');
+    if (!el) return;
+    if (!msg) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = msg;
+    el.classList.toggle('error', !!isError);
+  }
+
+  // Ambil file VTT subtitle dari server sendiri lalu ubah jadi daftar cue.
+  async function loadSubtitleCues(id) {
+    if (subState.cues.length) return subState.cues;
+    const res = await fetch(subUrlFor(id), { cache: 'no-cache' });
+    if (!res.ok) throw new Error('Subtitle tidak tersedia untuk judul ini');
+    const text = await res.text();
+    const cues = [];
+    const blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+    const toMs = (t) => {
+      const m = t.trim().match(/(\d+):(\d+):(\d+)[.,](\d+)/);
+      if (!m) return 0;
+      return Number(m[1]) * 3600000 + Number(m[2]) * 60000 + Number(m[3]) * 1000 + Number(m[4].padEnd(3, '0').slice(0, 3));
+    };
+    for (const block of blocks) {
+      const lines = block.split('\n').filter((l) => l.trim() !== '');
+      if (lines.length < 2) continue;
+      let i = 0;
+      if (/^\d+$/.test(lines[0].trim())) i = 1;
+      if (!lines[i] || lines[i].indexOf('-->') === -1) continue;
+      const [a, b] = lines[i].split('-->');
+      const body = lines.slice(i + 1).join('\n');
+      if (!body) continue;
+      cues.push({ start: toMs(a), end: toMs(b), text: body });
+    }
+    subState.cues = cues;
+    return cues;
+  }
+
+  function activeCueAt(ms) {
+    const t = ms + subState.offset;
+    let lo = 0;
+    let hi = subState.cues.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const c = subState.cues[mid];
+      if (t < c.start) hi = mid - 1;
+      else if (t > c.end) lo = mid + 1;
+      else return c;
+    }
+    return null;
+  }
+
+  function paintCue(cue) {
+    const overlay = $('#subOverlay');
+    if (!overlay) return;
+    if (!cue) {
+      overlay.hidden = true;
+      return;
+    }
+    const safe = cue.text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>');
+    if (overlay.innerHTML !== safe) overlay.innerHTML = safe;
+    overlay.hidden = false;
+  }
+
+  // Video yang bisa kita kendalikan (hanya jika iframe satu origin & bisa diakses)
+  function findControllableVideo() {
+    const iframe = $('#streamFrame');
+    if (!iframe) return null;
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return null;
+      return doc.querySelector('video') || null;
+    } catch (e) {
+      return null; // cross-origin -> tidak bisa diprogram
+    }
+  }
+
+  async function initSubtitle(meta) {
+    stopSubtitle();
+    const btn = $('#btnSub');
+    subState.enabled = true;
+    subState.offset = 0;
+    if (btn) btn.classList.add('on');
+
+    let cues;
+    try {
+      cues = await loadSubtitleCues(meta.id);
+    } catch (err) {
+      subState.enabled = false;
+      if (btn) btn.classList.remove('on');
+      setSubStatus('Subtitle Indonesia belum tersedia untuk judul ini. <a href="#/film/' + esc(meta.id) + '">Lihat detail</a>', true);
+      return;
+    }
+
+    const startClock = () => {
+      if (subState.timer) clearInterval(subState.timer);
+      const tick = () => {
+        if (!subState.enabled) return;
+        const video = findControllableVideo();
+        if (video) {
+          paintCue(activeCueAt(video.currentTime * 1000));
+        } else {
+          // Pemutar pihak ketiga tidak bisa dibaca jamnya -> beri tahu sekali
+          setSubStatus(
+            'Subtitle Indonesia siap (' +
+              cues.length +
+              ' baris), tetapi pemutar 2Embed tidak bisa dibaca jamnya oleh halaman ini. Klik <strong>Buka Tab Baru</strong> lalu putar dengan pemutar yang mendukung subtitle, atau tonton lewat sumber yang menyediakan CC.'
+          );
+          if (subState.timer) clearInterval(subState.timer);
+        }
+      };
+      subState.timer = setInterval(tick, 220);
+      tick();
+    };
+    startClock();
+
+    if (btn)
+      btn.onclick = () => {
+        subState.enabled = !subState.enabled;
+        btn.classList.toggle('on', subState.enabled);
+        if (!subState.enabled) paintCue(null);
+      };
   }
 
   function closePlayer() {
+    stopSubtitle();
     $('#playerOverlay').hidden = true;
     $('#playerFrame').innerHTML = '';
     document.body.style.overflow = '';

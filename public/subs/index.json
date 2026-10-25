@@ -1,0 +1,6 @@
+{
+ "note": "Daftar subtitle lokal. Tambahkan berkas VTT bernama <imdb_id>.id.vtt di folder ini.",
+ "items": [
+  { "id": "tt36983905", "title": "The Uprising (2026)", "lang": "id", "file": "tt36983905.id.vtt", "cues": 1483, "duration": "02:01:40" }
+ ]
+}
