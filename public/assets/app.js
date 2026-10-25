@@ -78,18 +78,41 @@
     };
   }
 
+  // Basis API: `/api/*` (server lokal / redirect Netlify). Kalau itu tidak tersedia,
+  // jatuh ke Netlify Function berbasis file (`/catalog`, `/meta`, `/search`, `/health`).
+  let apiBase = null; // null = belum diketahui, 'api' | 'root'
+
+  async function fetchWithFallback(path, qs) {
+    const bases = apiBase ? [apiBase] : ['api', 'root'];
+    let lastErr = null;
+    for (const base of bases) {
+      const url = base === 'api' ? `/api/${path}${qs}` : `/${path}${qs}`;
+      try {
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        const ctype = res.headers.get('content-type') || '';
+        // Redirect SPA mengembalikan HTML (bukan JSON) -> anggap endpoint tidak ada
+        if (!ctype.includes('json')) throw new Error('endpoint tidak tersedia (' + res.status + ')');
+        if (!res.ok) {
+          let msg = 'Gagal memuat data (' + res.status + ')';
+          try {
+            const j = await res.json();
+            if (j && j.error) msg = j.error;
+          } catch (e) {}
+          throw new Error(msg);
+        }
+        apiBase = base;
+        return await res.json();
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    apiBase = null;
+    throw lastErr || new Error('Gagal memuat data');
+  }
+
   async function api(path, params) {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-    const res = await fetch('/api/' + path + qs);
-    if (!res.ok) {
-      let msg = 'Gagal memuat data (' + res.status + ')';
-      try {
-        const j = await res.json();
-        if (j && j.error) msg = j.error;
-      } catch (e) {}
-      throw new Error(msg);
-    }
-    return res.json();
+    return fetchWithFallback(path, qs);
   }
 
   /* ------------------------------ watchlist & riwayat ------------------------------ */
