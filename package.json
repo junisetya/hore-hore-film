@@ -1,0 +1,10 @@
+{
+  "name": "hore-hore-film",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hore-Hore Film — aplikasi nonton film & series dengan katalog lengkap, pencarian, watchlist, dan pemutar.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hore-Hore Film — Nonton Film &amp; Series</title>
+<meta name="description" content="Hore-Hore Film — katalog film dan series terbaru, pencarian cepat, watchlist, dan pemutar dalam satu aplikasi." />
+<link rel="icon" href="/assets/logo-320.png" type="image/png" />
+<link rel="preconnect" href="https://images.metahub.space" />
+<link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar" id="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/" aria-label="Hore-Hore Film">
+        <img class="brand-logo" src="/assets/logo-320.png" alt="Logo Hore-Hore Film" width="46" height="46" />
+        <span class="brand-text">hore<span class="dot">·</span>hore<span class="brand-sub">film</span></span>
+      </a>
+
+      <nav class="mainnav" aria-label="Navigasi utama">
+        <a href="#/" data-nav="home">Home</a>
+        <a href="#/films" data-nav="films">Film</a>
+        <a href="#/series" data-nav="series">Series</a>
+        <a href="#/genre/Horror" data-nav="genre">Genre</a>
+        <a href="#/tahun" data-nav="tahun">Tahun</a>
+        <a href="#/watchlist" data-nav="watchlist">Watchlist <span class="pill" id="watchlistCount" hidden>0</span></a>
+      </nav>
+
+      <div class="topbar-actions">
+        <form class="searchbox" id="searchForm" role="search" autocomplete="off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.24 4.25 1.42-1.42-4.25-4.24A7.5 7.5 0 0 0 10.5 3Zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"/></svg>
+          <input id="searchInput" type="search" name="q" placeholder="Cari film atau series…" aria-label="Cari film atau series" />
+          <kbd>/</kbd>
+        </form>
+        <button class="iconbtn" id="menuBtn" aria-label="Buka menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3V6Zm0 5h18v2H3v-2Zm0 5h18v2H3v-2Z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="genrestrip" id="genreStrip"></div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <footer class="sitefooter">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img class="brand-logo footer" src="/assets/logo-320.png" alt="Logo Hore-Hore Film" width="52" height="52" />
+        <span class="brand-text small">hore<span class="dot">·</span>hore<span class="brand-sub">film</span></span>
+        <p>Nonton tanpa ribet. Katalog film &amp; series, watchlist pribadi, dan pemutar bawaan.</p>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h4>Jelajahi</h4>
+          <a href="#/films">Semua Film</a>
+          <a href="#/series">Semua Series</a>
+          <a href="#/tahun">Berdasarkan Tahun</a>
+          <a href="#/genre/Action">Action</a>
+        </div>
+        <div>
+          <h4>Genre Populer</h4>
+          <a href="#/genre/Horror">Horror</a>
+          <a href="#/genre/Drama">Drama</a>
+          <a href="#/genre/Comedy">Comedy</a>
+          <a href="#/genre/Romance">Romance</a>
+        </div>
+        <div>
+          <h4>Akun</h4>
+          <a href="#/watchlist">Watchlist</a>
+          <a href="#/riwayat">Riwayat Tonton</a>
+          <a href="#/tentang">Tentang Aplikasi</a>
+        </div>
+      </div>
+    </div>
+    <p class="footer-note">
+      © <span id="year">2026</span> Hore-Hore Film · Aplikasi demo. Data judul, poster, dan trailer berasal dari
+      sumber publik (Cinemeta / IMDb). Hore-Hore Film tidak menyimpan atau meng-host file film apa pun.
+    </p>
+  </footer>
+</div>
+
+<div class="player-overlay" id="playerOverlay" hidden>
+  <div class="player-shell" role="dialog" aria-modal="true" aria-label="Pemutar">
+    <div class="player-head">
+      <div>
+        <h3 id="playerTitle">—</h3>
+        <p id="playerSub" class="muted"></p>
+      </div>
+      <div class="player-head-actions">
+        <a id="playerImdb" class="btn ghost tiny" target="_blank" rel="noopener">IMDb</a>
+        <button class="iconbtn" id="playerClose" aria-label="Tutup pemutar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3 1.4 1.4Z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="player-frame" id="playerFrame"></div>
+    <div class="player-foot" id="playerFoot"></div>
+  </div>
+</div>
+
+<div class="welcome-overlay" id="welcomeOverlay" hidden>
+  <div class="welcome-card" role="dialog" aria-modal="true" aria-labelledby="welcomeText">
+    <button class="welcome-close" id="welcomeClose" aria-label="Tutup pop-up sambutan">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3 1.4 1.4Z"/></svg>
+    </button>
+    <div class="welcome-glow" aria-hidden="true"></div>
+    <img class="welcome-logo" src="/assets/logo.png" alt="Logo Hore-Hore Film — cangkir kopi sinema" width="220" height="220" />
+    <p class="welcome-text" id="welcomeText">
+      Sugeng Rawuh di <strong>Hore-Hore Film</strong> Lurr, Monggo dinikmati film nya sambil sediakan secangkir kopi
+    </p>
+    <button class="btn welcome-cta" id="welcomeOk">Siap, Nonton!</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>
