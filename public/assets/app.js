@@ -24,15 +24,16 @@
     return list;
   })();
 
-  // Penyedia pemutaran. Semua memakai iframe, dan sebagian memasang iklan/popup
-  // lewat window.open. Karena itu iframe diberi sandbox tanpa allow-popups.
+  // Penyedia pemutaran. Semua memakai iframe. 2Embed menolak berjalan di dalam
+  // iframe sandbox ("Sandbox not allowed"), jadi sandbox dilepas agar bisa diputar;
+  // dampaknya iklan/popup dari penyedia mungkin muncul (disarankan pakai adblocker).
   // `hidden: true` = masih tersedia sebagai cadangan otomatis, tapi tidak ditampilkan
   // sebagai pilihan di bar sumber.
   const STREAM_PROVIDERS = [
     {
       id: '2embed',
       name: '2Embed',
-      sandbox: true,
+      sandbox: false,
       movie: (id) => `https://www.2embed.cc/embed/${id}`,
       tv: (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`,
     },
@@ -725,7 +726,7 @@
       const btn = $('#loadMore');
       if (btn) btn.textContent = 'Memuat…';
       try {
-        const data = await api('catalog', { type: 'movie', catalog: 'year', genre: year, skip });
+        const data = await api('catalog', { type: 'movie', catalog: 'year', year, skip });
         const fresh = data.metas.filter((m) => !loaded.some((x) => x.id === m.id));
         loaded = loaded.concat(fresh);
         skip = data.nextSkip;
@@ -977,11 +978,10 @@
         : current.movie(meta.id);
 
     const sandboxAttr = current.sandbox ? ` sandbox="${SANDBOX}"` : '';
-    // sandbox dengan allow-same-origin + allow-scripts membuat iframe bisa diakses
-    // dari halaman ini (untuk menyisipkan <track> subtitle) selama originnya sama.
+    // Provider default (2Embed) menolak sandbox, jadi tidak dipasang atribut sandbox
+    // (sandbox hanya dipakai provider cadangan tersembunyi yang mau menerimanya).
     frame.innerHTML = `<iframe id="streamFrame" src="${esc(url)}"${sandboxAttr} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="origin" title="${esc(meta.name)}"></iframe>
-      <div class="sub-overlay" id="subOverlay" hidden></div>
-      <div class="sub-status" id="subStatus" hidden></div>`;
+      <div class="sub-overlay" id="subOverlay" hidden></div>`;
 
     foot.innerHTML = `
       ${providers.length > 1 ? '<span>Sumber:</span>' : ''}
@@ -1060,6 +1060,11 @@
     const res = await fetch(subUrlFor(id), { cache: 'no-cache' });
     if (!res.ok) throw new Error('Subtitle tidak tersedia untuk judul ini');
     const text = await res.text();
+    // File yang dikirim server bisa saja halaman HTML (fallback SPA) jika file VTT
+    // tidak ada. Jangan parsing HTML diam-diam -> 0 baris; anggap tidak tersedia.
+    if (!/^\uFEFF?WEBVTT\b/i.test(text)) {
+      throw new Error('Subtitle tidak tersedia untuk judul ini');
+    }
     const cues = [];
     const blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/);
     const toMs = (t) => {
@@ -1151,10 +1156,15 @@
           paintCue(activeCueAt(video.currentTime * 1000));
         } else {
           // Pemutar pihak ketiga tidak bisa dibaca jamnya -> beri tahu sekali
+          const provName =
+            (STREAM_PROVIDERS.find((p) => p.id === playerState.provider) || {}).name ||
+            'Pemutar';
           setSubStatus(
             'Subtitle Indonesia siap (' +
               cues.length +
-              ' baris), tetapi pemutar 2Embed tidak bisa dibaca jamnya oleh halaman ini. Klik <strong>Buka Tab Baru</strong> lalu putar dengan pemutar yang mendukung subtitle, atau tonton lewat sumber yang menyediakan CC.'
+              ' baris), tetapi pemutar ' +
+              esc(provName) +
+              ' tidak bisa dibaca jamnya oleh halaman ini. Klik <strong>Buka Tab Baru</strong> lalu putar dengan pemutar yang mendukung subtitle, atau tonton lewat sumber yang menyediakan CC.'
           );
           if (subState.timer) clearInterval(subState.timer);
         }

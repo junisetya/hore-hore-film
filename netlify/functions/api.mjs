@@ -1,6 +1,12 @@
 // Netlify Function: proxy katalog (menggantikan server.js saat deploy di Netlify)
 // Endpoint: /api/catalog, /api/meta, /api/search, /api/health
 
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 const CINEMETA = 'https://v3-cinemeta.strem.io';
 
 const cache = new Map(); // key -> { at, ttl, data }
@@ -107,7 +113,33 @@ async function handleCatalog(q) {
   const type = q.get('type') === 'series' ? 'series' : 'movie';
   const catalog = (q.get('catalog') || 'top').replace(/[^a-zA-Z]/g, '');
   const genre = q.get('genre') || '';
+  const year = q.get('year') || '';
   const skip = Math.max(0, parseInt(q.get('skip') || '0', 10) || 0);
+
+  // Filter berdasarkan tahun rilis (lihat keterangan lengkap di server.js).
+  if (/^\d{4}$/.test(year)) {
+    const key = 'cat:year:' + type + ':' + year + ':' + skip;
+    const cached = cacheGet(key);
+    if (cached) return cached;
+
+    const matched = [];
+    let cursor = skip;
+    let pageFull = false;
+    for (let i = 0; i < 10 && matched.length < 20; i++) {
+      const data = await fetchJSON(`${CINEMETA}/catalog/${type}/year/skip=${cursor}.json`);
+      const page = (data.metas || []).map(metaPreview).filter(Boolean);
+      pageFull = page.length >= 20;
+      for (const m of page) {
+        if (String(m.year) === year && !matched.some((x) => x.id === m.id)) matched.push(m);
+      }
+      cursor += page.length;
+      if (!pageFull) break;
+    }
+
+    const result = { metas: matched, hasMore: pageFull, nextSkip: cursor, year, type };
+    cacheSet(key, result, 1000 * 60 * 60 * 3);
+    return result;
+  }
 
   const parts = [];
   if (genre) parts.push('genre=' + encodeURIComponent(genre));
@@ -188,6 +220,24 @@ async function handleSearch(q) {
   return result;
 }
 
+async function handleIndonesia() {
+  const key = 'indonesia:v1';
+  const cached = cacheGet(key);
+  if (cached) return cached;
+
+  const file = join(HERE, '..', '..', 'src', 'data', 'indonesia.json');
+  try {
+    const raw = await readFile(file, 'utf8');
+    const data = JSON.parse(raw);
+    const items = Array.isArray(data.items) ? data.items : [];
+    const result = { total: items.length, items };
+    cacheSet(key, result, 1000 * 60 * 60 * 24);
+    return result;
+  } catch {
+    return { total: 0, items: [] };
+  }
+}
+
 const json = (status, obj) =>
   new Response(JSON.stringify(obj), {
     status,
@@ -205,6 +255,7 @@ export default async (req) => {
     if (path === 'catalog') return json(200, await handleCatalog(q));
     if (path === 'meta') return json(200, await handleMeta(q));
     if (path === 'search') return json(200, await handleSearch(q));
+    if (path === 'indonesia') return json(200, await handleIndonesia());
     if (path === 'health') return json(200, { ok: true, time: Date.now() });
     return json(404, { error: 'Endpoint tidak ditemukan' });
   } catch (err) {

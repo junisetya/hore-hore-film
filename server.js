@@ -26,6 +26,7 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
+  '.vtt': 'text/vtt; charset=utf-8',
 };
 
 /* ---------------------------- cache ------------------------------------ */
@@ -164,7 +165,46 @@ async function handleCatalog(q) {
   const type = q.get('type') === 'series' ? 'series' : 'movie';
   const catalog = (q.get('catalog') || 'top').replace(/[^a-zA-Z]/g, '');
   const genre = q.get('genre') || '';
+  const year = q.get('year') || '';
   const skip = Math.max(0, parseInt(q.get('skip') || '0', 10) || 0);
+
+  // Filter berdasarkan tahun rilis. Cinemeta tidak punya facet tahun pada katalog
+  // "year" (itu hanya urutan rilis terbaru), jadi kita ambil beberapa halaman dan
+  // saring di sisi server sesuai nilai `year`. Batasi 10 halaman (~200 judul)
+  // per permintaan agar tetap responsif.
+  if (/^\d{4}$/.test(year)) {
+    const key = 'cat:year:' + type + ':' + year + ':' + skip;
+    const cached = cacheGet(key);
+    if (cached) return cached;
+
+    const matched = [];
+    let cursor = skip;
+    let pageFull = false;
+    for (let i = 0; i < 10 && matched.length < 20; i++) {
+      const data = await fetchJSON(
+        `${CINEMETA}/catalog/${type}/year/skip=${cursor}.json`
+      );
+      const page = (data.metas || []).map(normalizeMetaPreview).filter(Boolean);
+      pageFull = page.length >= 20;
+      for (const m of page) {
+        if (String(m.year) === year && !matched.some((x) => x.id === m.id)) {
+          matched.push(m);
+        }
+      }
+      cursor += page.length;
+      if (!pageFull) break;
+    }
+
+    const result = {
+      metas: matched,
+      hasMore: pageFull,
+      nextSkip: cursor,
+      year,
+      type,
+    };
+    cacheSet(key, result, CATALOG_TTL);
+    return result;
+  }
 
   const parts = [];
   if (genre) parts.push('genre=' + encodeURIComponent(genre));
@@ -256,6 +296,24 @@ async function handleSearch(q) {
   return result;
 }
 
+async function handleIndonesia() {
+  const key = 'indonesia:v1';
+  const cached = cacheGet(key);
+  if (cached) return cached;
+
+  const file = path.join(__dirname, 'src', 'data', 'indonesia.json');
+  try {
+    const raw = await fs.promises.readFile(file, 'utf8');
+    const data = JSON.parse(raw);
+    const items = Array.isArray(data.items) ? data.items : [];
+    const result = { total: items.length, items };
+    cacheSet(key, result, 1000 * 60 * 60 * 24);
+    return result;
+  } catch (e) {
+    return { total: 0, items: [] };
+  }
+}
+
 /* ------------------------------ server -------------------------------- */
 function sendJSON(res, status, obj) {
   const body = JSON.stringify(obj);
@@ -305,6 +363,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/catalog') return sendJSON(res, 200, await handleCatalog(searchParams));
       if (pathname === '/api/meta') return sendJSON(res, 200, await handleMeta(searchParams));
       if (pathname === '/api/search') return sendJSON(res, 200, await handleSearch(searchParams));
+      if (pathname === '/api/indonesia') return sendJSON(res, 200, await handleIndonesia());
       if (pathname === '/api/health') return sendJSON(res, 200, { ok: true, time: Date.now() });
       return sendJSON(res, 404, { error: 'Endpoint tidak ditemukan' });
     } catch (err) {
