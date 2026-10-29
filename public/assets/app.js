@@ -1359,8 +1359,7 @@
         input.select();
       }
       if (e.key === 'Escape') {
-        if (!$('#welcomeOverlay').hidden) closeWelcome();
-        else if (!$('#playerOverlay').hidden) closePlayer();
+        if (!$('#playerOverlay').hidden) closePlayer();
         else if (document.activeElement === input) input.blur();
       }
     });
@@ -1402,51 +1401,6 @@
 
     route();
     markStrip();
-    initWelcome();
-  }
-
-  /* ------------------------------ pop-up sambutan ------------------------------ */
-  const WELCOME_KEY = 'welcomeSeenV1';
-
-  function closeWelcome() {
-    const overlay = $('#welcomeOverlay');
-    if (!overlay || overlay.hidden) return;
-    overlay.style.transition = 'opacity 0.22s ease';
-    overlay.style.opacity = '0';
-    setTimeout(() => {
-      overlay.hidden = true;
-      overlay.style.transition = '';
-      overlay.style.opacity = '';
-    }, 220);
-    document.removeEventListener('keydown', onWelcomeKey);
-    if (!document.querySelector('.player-overlay:not([hidden])')) document.body.style.overflow = '';
-    try {
-      sessionStorage.setItem('hhf:' + WELCOME_KEY, '1');
-    } catch (e) {}
-  }
-
-  function onWelcomeKey(e) {
-    if (e.key === 'Escape') closeWelcome();
-  }
-
-  function initWelcome() {
-    const overlay = $('#welcomeOverlay');
-    if (!overlay) return;
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem('hhf:' + WELCOME_KEY) === '1';
-    } catch (e) {}
-    if (seen) return;
-
-    overlay.hidden = false;
-    document.body.style.overflow = 'hidden';
-    document.addEventListener('keydown', onWelcomeKey);
-
-    $('#welcomeClose').addEventListener('click', closeWelcome);
-    $('#welcomeOk').addEventListener('click', closeWelcome);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closeWelcome();
-    });
   }
 
   document.addEventListener('DOMContentLoaded', init);

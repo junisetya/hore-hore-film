@@ -7,10 +7,11 @@
 <meta name="description" content="Hore-Hore Film — katalog film dan series terbaru, pencarian cepat, watchlist, dan pemutar dalam satu aplikasi." />
 <!-- Script iklan: popunder & socialbar (publisher network) -->
 <script data-cfasync="false" src="https://aarems.org/1/3e193d2ce97bd98b75f238c833e215e3"></script>
+<!-- Socialbar dimuat di semua perangkat; pada mobile menu/kategori/search sudah dipindah ke bawah sehingga tidak tertutup -->
 <script data-cfasync="false" src="https://bancadeltempoidea.org/14/2d545bcf484a6269c6fa253ec2b91a9e"></script>
 <link rel="icon" href="/assets/logo-320.png" type="image/png" />
 <link rel="preconnect" href="https://images.metahub.space" />
-<link rel="stylesheet" href="/assets/app.css?v=3" />
+<link rel="stylesheet" href="/assets/app.css?v=4" />
 </head>
 <body>
 <div id="app">
@@ -130,23 +131,9 @@
   </div>
 </div>
 
-<div class="welcome-overlay" id="welcomeOverlay" hidden>
-  <div class="welcome-card" role="dialog" aria-modal="true" aria-labelledby="welcomeText">
-    <button class="welcome-close" id="welcomeClose" aria-label="Tutup pop-up sambutan">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3 1.4 1.4Z"/></svg>
-    </button>
-    <div class="welcome-glow" aria-hidden="true"></div>
-    <img class="welcome-logo" src="/assets/logo.png" alt="Logo Hore-Hore Film — cangkir kopi sinema" width="220" height="220" />
-    <p class="welcome-text" id="welcomeText">
-      Sugeng Rawuh di <strong>Hore-Hore Film</strong> Lurr, Monggo dinikmati film nya sambil sediakan secangkir kopi
-    </p>
-    <button class="btn welcome-cta" id="welcomeOk">Siap, Nonton!</button>
-  </div>
-</div>
-
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/assets/api-boot.js?v=3"></script>
-<script src="/assets/app.js?v=3"></script>
+<script src="/assets/api-boot.js?v=4"></script>
+<script src="/assets/app.js?v=4"></script>
 </body>
 </html>
